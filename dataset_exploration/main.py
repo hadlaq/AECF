@@ -23,7 +23,7 @@ def plot_dates_data(counter):
 
 
 def plot_users_data(counter):
-    ranges = [8 * i for i in range(1, 9)]
+    ranges = [100 * i for i in range(1, 6)]
     buckets = Counter()
     for user in counter:
         ratings = counter[user]
