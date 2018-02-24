@@ -1,50 +1,12 @@
 import numpy as np
 import tensorflow as tf
+import time
+
+from data_manager import Data
 
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 
-
-# Will change this later but this is an example of how data can be consumed.
-def parse_data_point(line):
-    n = 17770
-    line = line.strip()
-    user, temp = line.split(":")
-    ratings = temp.split(" ")
-    ratings = [tuple(r.split(",")) for r in ratings]
-    vector = np.zeros(n)
-    for r in ratings:
-        movie, rating, date = r
-        vector[int(movie) - 1] = float(rating)
-    return vector
-
-
-def get_data(m, tm):
-    i = 0
-    n = 17770
-    matrix = np.zeros((n, m+tm))
-    with open("../data/netflix/output") as f:
-        for line in f:
-            matrix[:, i] = parse_data_point(line)
-            i += 1
-            if m+tm == i:
-                break
-    train_mat = matrix[:, 0:m]
-    validation = matrix[:, m:m+tm]
-
-    training_dataset = tf.data.Dataset.from_tensor_slices(train_mat.T)
-    validation_dataset = tf.data.Dataset.from_tensor_slices(validation.T)
-
-    training_dataset.batch(32)
-    validation_dataset.batch(32)
-
-    it = tf.data.Iterator.from_structure(training_dataset.output_types,
-                                         training_dataset.output_shapes)
-
-    training_init_op = it.make_initializer(training_dataset)
-    validation_init_op = it.make_initializer(validation_dataset)
-
-    return it, training_init_op, validation_init_op
 
 def build_graph(X):
     d = 128
@@ -63,7 +25,7 @@ def build_graph(X):
 def get_next(iterator):
     X = iterator.get_next()
     X = tf.cast(X, tf.float32)
-    X = tf.reshape(X, [-1, 1])
+    X = tf.transpose(X)
     return X
 
 
@@ -74,52 +36,52 @@ def get_cost(X, Y):
     Ym = tf.multiply(Y, Xm)
     ms = tf.reduce_sum(Xm, axis=0)
     loss = tf.divide(tf.reduce_sum(tf.square(Ym - X), axis=0), ms)
-    return tf.reduce_mean(loss), Ym
+    return tf.reduce_mean(loss)
 
 
-def train(cost, Ym, epochs=100, lr=0.1):
+def train(dataobj, cost, epochs=100, lr=0.1):
     optimizer = tf.train.GradientDescentOptimizer(lr).minimize(cost)
     train_summary = tf.summary.scalar("train loss", cost)
-    validation_summary = tf.summary.scalar("validation loss", cost)
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
         summary_writer = tf.summary.FileWriter("../logs", graph=tf.get_default_graph())
 
-        i = 0
         for e in range(epochs):
-            sess.run(training_init_op)
-            total = 0
-            try:
-                while True:
-                    _, current_cost, summary = sess.run([optimizer, cost, train_summary])
-                    total += current_cost
-                    summary_writer.add_summary(summary, i)
-                    i += 1
-            except tf.errors.OutOfRangeError:
-                pass
-            print("Train Epoch ", e + 1, ":\t", total / 6000.0)
-
-            sess.run(validation_init_op)
-            total = 0
-
-            try:
-                while True:
-                    current_cost, summary = sess.run([cost, validation_summary])
-                    total += current_cost
-                    i += 1
-            except tf.errors.OutOfRangeError:
-                pass
-            print("Valid Epoch ", e + 1, ":\t", total / 100.0)
+            train_epoch(e, sess, optimizer, train_summary, summary_writer, dataobj)
 
 
-training_size = 6000
-validation_size = 100
+def train_epoch(epoch_num, sess, optimizer, train_summary, summary_writer, dataobj):
+    dataobj.iterator_init(sess)
+    print("Epoch: ", epoch_num + 1)
+    chunk_num = 0
+    done = False
+    while not done:
+        tic = time.time()
+        if dataobj.is_done():
+            done = True
+        chunk_num += 1
+        batch_num = 0
+        total_cost = 0
+        try:
+            while True:
+                _, current_cost, summary = sess.run([optimizer, cost, train_summary])
+                total_cost += current_cost
+                batch_num += 1
+                # summary_writer.add_summary(summary, batch_num)
+        except tf.errors.OutOfRangeError:
+            dataobj.get_iterator()
+            dataobj.iterator_init(sess)
+        print("Epoch ", epoch_num + 1, " - chunk ", chunk_num, ":\t", total_cost / batch_num, "\t : ", time.time() - tic, "s")
+    dataobj.new_epoch()
+    dataobj.get_iterator()
 
-epochs = 100
+
+epochs = 3
 lr = 0.1
 
-iterator, training_init_op, validation_init_op = get_data(training_size, validation_size)
+dataobj = Data(size=64)
+iterator = dataobj.get_iterator()
 X = get_next(iterator)
 Y = build_graph(X)
 cost = get_cost(X, Y)
-train(cost, epochs=epochs, lr=lr)
+train(dataobj, cost, epochs=epochs, lr=lr)
