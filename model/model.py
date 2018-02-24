@@ -71,15 +71,17 @@ def train_epoch(epoch_num, sess, optimizer, train_summary, summary_writer, datao
         except tf.errors.OutOfRangeError:
             dataobj.get_iterator()
             dataobj.iterator_init(sess)
+        if chunk_num == 10:
+            break
         print("Epoch ", epoch_num + 1, " - chunk ", chunk_num, ":\t", total_cost / batch_num, "\t : ", time.time() - tic, "s")
     dataobj.new_epoch()
     dataobj.get_iterator()
 
 
-epochs = 3
+epochs = 4
 lr = 0.1
 
-dataobj = Data(size=64)
+dataobj = Data(size=1024)
 iterator = dataobj.get_iterator()
 X = get_next(iterator)
 Y = build_graph(X)

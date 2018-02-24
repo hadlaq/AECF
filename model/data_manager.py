@@ -38,7 +38,6 @@ class Data:
         self.test = test
 
     def get_iterator(self):
-        print("getting data")
         n = 17770
         matrix = np.zeros((n, self.size))
         if self.test:
@@ -65,7 +64,6 @@ class Data:
             matrix_test = matrix_test[:, 0:j]
         f.close()
 
-        print("got data")
         if self.test:
             dataset = tf.data.Dataset.from_tensor_slices((matrix.T, matrix_test.T))
         else:
@@ -83,13 +81,10 @@ class Data:
         self.iterator = iterator
         self.initializer = init
 
-        print("really got data")
         return iterator
 
     def iterator_init(self, sess):
-        print("1 crashed?")
         sess.run(self.initializer)
-        print("2 crashed?")
 
     def is_done(self):
         return self.done
