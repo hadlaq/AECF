@@ -1,3 +1,4 @@
+# Makes a new dataset of the first 'size' lines of the larger dataset
 file_path = "../data/netflix/output"
 new_file_path = file_path + "_small"
 size = 50000

@@ -1,4 +1,5 @@
 import numpy as np
+import tensorflow as tf
 
 
 def parse_ratings(temp):
@@ -20,7 +21,7 @@ def parse_data_point(line):
 
 def parse_test_point(line):
     line = line.strip()
-    user, tempt, tempi = line.split(":")
+    user, tempi, tempt = line.split(":")
     return parse_ratings(tempi), parse_ratings(tempt)
 
 
@@ -30,42 +31,22 @@ class Data:
         self.size = size
         self.batch = batch
         self.path = path
+        self.read_points = 0
         self.done = False
-        self.matrix = None
-        self.read = 0
+        self.iterator = None
+        self.initializer = None
         self.test = test
 
-    def get_next(self):
-        if self.done:
-            return None
-        if self.matrix is None or self.read >= self.matrix.shape[1]:
-            self._load_matrix()
-            self.read = 0
-        if self.read + self.batch <= self.matrix.shape[1]:
-            current = self.read
-            self.read += self.batch
-            if self.test:
-                return self.matrix[:, current:self.read, 0], self.matrix[:, current:self.read, 1]
-            else:
-                return self.matrix[:, current:self.read]
-        else:
-            current = self.read
-            self.read = self.matrix.shape[1]
-            if self.test:
-                return self.matrix[:, current:, 0], self.matrix[:, current:, 1]
-            else:
-                return self.matrix[:, current:]
-
-    def _load_matrix(self):
+    def get_iterator(self):
         n = 17770
+        matrix = np.zeros((n, self.size))
         if self.test:
-            matrix = np.zeros((n, self.size, 2))
-        else:
-            matrix = np.zeros((n, self.size))
+            matrix_test = np.zeros((n, self.size))
         f = open(self.path)
         j = 0
         for i in range(self.size):
             j = i
+            self.read_points += 1
             f.seek(self.offset)
             line = f.readline()
             self.offset = f.tell()
@@ -74,20 +55,41 @@ class Data:
                 break
             if self.test:
                 inp, target = parse_test_point(line)
-                matrix[:, i, 0] = inp
-                matrix[:, i, 1] = target
+                matrix[:, i] = inp
+                matrix_test[:, i] = target
             else:
                 matrix[:, i] = parse_data_point(line)
+        matrix = matrix[:, 0:j]
         if self.test:
-            self.matrix = matrix[:, 0:j + 1, :]
+            matrix_test = matrix_test[:, 0:j]
+        f.close()
+
+        if self.test:
+            dataset = tf.data.Dataset.from_tensor_slices((matrix.T, matrix_test.T))
         else:
-            self.matrix = matrix[:, 0:j + 1]
+            dataset = tf.data.Dataset.from_tensor_slices(matrix.T)
+
+        dataset = dataset.batch(self.batch)
+
+        if self.iterator is None:
+            iterator = tf.data.Iterator.from_structure(dataset.output_types, dataset.output_shapes)
+        else:
+            iterator = self.iterator
+
+        init = iterator.make_initializer(dataset)
+
+        self.iterator = iterator
+        self.initializer = init
+
+        return iterator
+
+    def iterator_init(self, sess):
+        sess.run(self.initializer)
 
     def is_done(self):
         return self.done
 
     def new_epoch(self):
         self.offset = 0
-        self.read = 0
+        self.read_points = 0
         self.done = False
-        self.matrix = None

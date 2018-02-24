@@ -1,4 +1,10 @@
-file_path = "../data/netflix/output"
+# Split a dataset into train, dev, and test datasets
+# The train set gets all users with at least one rating prior to 'max_date' and includes only those ratings
+# The second set gets all users with at least one rating prior and one rating after 'max_date' and includes
+# an input point which are the ratings prior and a target point which are the ratings after. The second set
+# split into dev and test sets.
+
+file_path = "../data/netflix/output_small"
 train_file_path = file_path + "_train"
 test_file_path = file_path + "_test"
 dev_file_path = file_path + "_dev"
@@ -38,7 +44,7 @@ for line in f:
             test = user + ":"
             for r in new_ratings:
                 test += r[0] + "," + r[1] + "," + r[2] + " "
-            test = test.strip() + ":" + train + "\n"
+            test = test.strip() + ":" + train
             if point % 2 == 0:
                 test_size += 1
                 tsf.write(test)
@@ -49,14 +55,16 @@ for line in f:
 print(train_size)
 print(test_size)
 print(dev_size)
+
+# Splits for small dataset
 # 49698
 # 9234
 # 9056
 
+# Splits for large dataset
 # 477412
 # 86847
 # 86635
-
 
 f.close()
 trf.close()

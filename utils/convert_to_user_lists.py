@@ -1,4 +1,4 @@
-# Files to look at.
+# Converts the dataset from listing ratings of each movie to listing ratings of each user
 base_path = "../data/netflix/"
 files = ["combined_data_1.txt", "combined_data_2.txt", "combined_data_3.txt", "combined_data_4.txt"]
 files = [base_path + f for f in files]

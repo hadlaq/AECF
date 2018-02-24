@@ -1,6 +1,6 @@
-import numpy as np
 import tensorflow as tf
 import time
+import matplotlib.pyplot as plt
 
 from data_manager import Data
 
@@ -18,15 +18,8 @@ def build_graph(X):
 
     b2 = tf.get_variable(name="b2", shape=(n, 1), initializer=tf.zeros_initializer())
     Z2 = tf.matmul(W1, A1, transpose_a=True) + b2
-    Y = tf.nn.sigmoid(Z2) * 5.0
+    Y = tf.nn.sigmoid(Z2) * 4.0 + 1
     return Y
-
-
-def get_next(iterator):
-    X = iterator.get_next()
-    X = tf.cast(X, tf.float32)
-    X = tf.transpose(X)
-    return X
 
 
 def get_cost(X, Y):
@@ -39,51 +32,78 @@ def get_cost(X, Y):
     return tf.reduce_mean(loss)
 
 
-def train(dataobj, cost, epochs=100, lr=0.1):
+def train(dataobj, dataobjdev, cost, X, Y, epochs=100, lr=0.1):
     optimizer = tf.train.GradientDescentOptimizer(lr).minimize(cost)
     train_summary = tf.summary.scalar("train loss", cost)
+    eval_summary = tf.summary.scalar("eval loss", cost)
+    train_costs = []
+    eval_costs = []
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
         summary_writer = tf.summary.FileWriter("../logs", graph=tf.get_default_graph())
 
+        train_step = 0
+        eval_step = 0
         for e in range(epochs):
-            train_epoch(e, sess, optimizer, train_summary, summary_writer, dataobj)
+            train_step = train_epoch(e, train_step, sess, optimizer, train_summary, summary_writer, dataobj, X, Y, train_costs)
+            eval_step = eval_epoch(e, eval_step, sess, eval_summary, summary_writer, dataobjdev, X, Y, eval_costs)
+    return train_costs, eval_costs
 
 
-def train_epoch(epoch_num, sess, optimizer, train_summary, summary_writer, dataobj):
-    dataobj.iterator_init(sess)
-    print("Epoch: ", epoch_num + 1)
-    chunk_num = 0
-    done = False
-    while not done:
-        tic = time.time()
-        if dataobj.is_done():
-            done = True
-        chunk_num += 1
-        batch_num = 0
-        total_cost = 0
-        try:
-            while True:
-                _, current_cost, summary = sess.run([optimizer, cost, train_summary])
-                total_cost += current_cost
-                batch_num += 1
-                # summary_writer.add_summary(summary, batch_num)
-        except tf.errors.OutOfRangeError:
-            dataobj.get_iterator()
-            dataobj.iterator_init(sess)
-        if chunk_num == 10:
+def train_epoch(epoch_num, step, sess, optimizer, train_summary, summary_writer, dataobj, X, Y, train_costs):
+    batch = 0
+    total_cost = 0
+    tic = time.time()
+    while True:
+        x = dataobj.get_next()
+        if x is None:
             break
-        print("Epoch ", epoch_num + 1, " - chunk ", chunk_num, ":\t", total_cost / batch_num, "\t : ", time.time() - tic, "s")
+        batch += 1
+        step += 1
+        _, current_cost, summary = sess.run([optimizer, cost, train_summary], feed_dict={X: x, Y: x})
+        total_cost += current_cost
+        summary_writer.add_summary(summary, step)
+    print("Train epoch ", epoch_num + 1, ":\t", total_cost / batch, "\t : ", time.time() - tic, "s")
+    train_costs.append(total_cost / batch)
     dataobj.new_epoch()
-    dataobj.get_iterator()
+    return step
 
 
-epochs = 4
+def eval_epoch(epoch_num, step, sess, eval_summary, summary_writer, dataobjdev, X, Y, eval_costs):
+    batch = 0
+    total_cost = 0
+    tic = time.time()
+    while True:
+        point = dataobjdev.get_next()
+        if point is None:
+            break
+        x, y = point
+        batch += 1
+        step += 1
+        current_cost, summary = sess.run([cost, eval_summary], feed_dict={X: x, Y: y})
+        total_cost += current_cost
+        summary_writer.add_summary(summary, step)
+    print("Eval epoch ", epoch_num + 1, ":\t", total_cost / batch, "\t : ", time.time() - tic, "s")
+    eval_costs.append(total_cost / batch)
+    dataobjdev.new_epoch()
+    return step
+
+
+epochs = 6
 lr = 0.1
+batch_size = 32
 
-dataobj = Data(size=1024)
-iterator = dataobj.get_iterator()
-X = get_next(iterator)
-Y = build_graph(X)
-cost = get_cost(X, Y)
-train(dataobj, cost, epochs=epochs, lr=lr)
+dataobj = Data(size=512, batch=batch_size)
+dataobjdev = Data(size=512, batch=batch_size, path="../data/netflix/output_small_dev", test=True)
+X = tf.placeholder(tf.float32, [17770, None], name='X')
+Y = tf.placeholder(tf.float32, [17770, None], name='Y')
+Yhat = build_graph(X)
+cost = get_cost(Y, Yhat)
+train_costs, eval_costs = train(dataobj, dataobjdev, cost, X, Y, epochs=epochs, lr=lr)
+
+t, = plt.plot([i+1 for i in range(epochs)], train_costs, label="Train")
+e, = plt.plot([i+1 for i in range(epochs)], eval_costs, label="Dev")
+plt.legend(handles=[t, e])
+plt.xlabel("Epoch")
+plt.ylabel("Cost")
+plt.show()
