@@ -18,7 +18,7 @@ def build_graph(X):
 
     b2 = tf.get_variable(name="b2", shape=(n, 1), initializer=tf.zeros_initializer())
     Z2 = tf.matmul(W1, A1, transpose_a=True) + b2
-    Y = tf.nn.sigmoid(Z2) * 4.0 + 1
+    Y = tf.nn.relu(Z2)
     return Y
 
 
