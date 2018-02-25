@@ -8,18 +8,58 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 
 
-def build_graph(X):
-    d = 128
-    n = 17770
-    W1 = tf.get_variable(name="W1", shape=(d, n), initializer=tf.random_normal_initializer(0, 0.01))
-    b1 = tf.get_variable(name="b1", shape=(d, 1), initializer=tf.zeros_initializer())
-    Z1 = tf.matmul(W1, X) + b1
-    A1 = tf.nn.relu(Z1)
+def last_activation(A):
+    return activation(A)
 
-    b2 = tf.get_variable(name="b2", shape=(n, 1), initializer=tf.zeros_initializer())
-    Z2 = tf.matmul(W1, A1, transpose_a=True) + b2
-    Y = tf.nn.relu(Z2)
-    return Y
+
+def activation(A):
+    return tf.nn.relu(A)
+
+
+def initialize_weights(layers, constrained):
+    W = {}
+    b = {}
+    for i in range(len(layers) - 1):
+        W[i + 1] = tf.get_variable(name="W" + str(i + 1),
+                               shape=(layers[i + 1], layers[i]),
+                               initializer=tf.random_normal_initializer(0, 0.01))
+        if constrained:
+            W[2 * len(layers) - 2 - i] = tf.transpose(W[i + 1])
+        else:
+            W[2 * len(layers) - 2 - i] = tf.get_variable(name="W" + str(2 * len(layers) - 2 - i),
+                                                         shape=(layers[i], layers[i + 1]),
+                                                         initializer=tf.random_normal_initializer(0, 0.01))
+        b[i + 1] = tf.get_variable(name="b" + str(i + 1),
+                               shape=(layers[i + 1], 1),
+                               initializer=tf.zeros_initializer())
+        b[2 * len(layers) - 2 - i] = tf.get_variable(name="b" + str(2 * len(layers) - 2 - i),
+                                                     shape=(layers[i], 1),
+                                                     initializer=tf.zeros_initializer())
+    return W, b
+
+
+def encoder(A, weights):
+    W, b = weights
+    layers = int(len(W) / 2)
+    for layer in range(1, layers + 1):
+        A = activation(tf.matmul(W[layer], A) + b[layer])
+    return A
+
+
+def decoder(A, weights):
+    W, b = weights
+    layers = int(len(W) / 2)
+    for layer in range(layers + 1, 2 * layers):
+        A = activation(tf.matmul(W[layer], A) + b[layer])
+    A = activation(tf.matmul(W[2 * layers], A) + b[2 * layers])
+    return A
+
+
+def autoencoder(X, layers, constrained=True):
+    weights = initialize_weights(layers, constrained)
+    A = encoder(X, weights)
+    A = decoder(A, weights)
+    return A
 
 
 def get_cost(X, Y):
@@ -45,12 +85,12 @@ def train(dataobj, dataobjdev, cost, X, Y, epochs=100, lr=0.1):
         train_step = 0
         eval_step = 0
         for e in range(epochs):
-            train_step = train_epoch(e, train_step, sess, optimizer, train_summary, summary_writer, dataobj, X, Y, train_costs)
-            eval_step = eval_epoch(e, eval_step, sess, eval_summary, summary_writer, dataobjdev, X, Y, eval_costs)
+            train_step = train_epoch(e, train_step, sess, optimizer, cost, train_summary, summary_writer, dataobj, X, Y, train_costs)
+            eval_step = eval_epoch(e, eval_step, sess, cost, eval_summary, summary_writer, dataobjdev, X, Y, eval_costs)
     return train_costs, eval_costs
 
 
-def train_epoch(epoch_num, step, sess, optimizer, train_summary, summary_writer, dataobj, X, Y, train_costs):
+def train_epoch(epoch_num, step, sess, optimizer, cost, train_summary, summary_writer, dataobj, X, Y, train_costs):
     batch = 0
     total_cost = 0
     tic = time.time()
@@ -69,7 +109,7 @@ def train_epoch(epoch_num, step, sess, optimizer, train_summary, summary_writer,
     return step
 
 
-def eval_epoch(epoch_num, step, sess, eval_summary, summary_writer, dataobjdev, X, Y, eval_costs):
+def eval_epoch(epoch_num, step, sess, cost, eval_summary, summary_writer, dataobjdev, X, Y, eval_costs):
     batch = 0
     total_cost = 0
     tic = time.time()
@@ -88,16 +128,16 @@ def eval_epoch(epoch_num, step, sess, eval_summary, summary_writer, dataobjdev, 
     dataobjdev.new_epoch()
     return step
 
-
-epochs = 6
-lr = 0.1
+epochs = 50
+lr = 1
 batch_size = 32
 
 dataobj = Data(size=512, batch=batch_size)
 dataobjdev = Data(size=512, batch=batch_size, path="../data/netflix/output_small_dev", test=True)
 X = tf.placeholder(tf.float32, [17770, None], name='X')
 Y = tf.placeholder(tf.float32, [17770, None], name='Y')
-Yhat = build_graph(X)
+layers = [17770, 256, 128]
+Yhat = autoencoder(X, layers)
 cost = get_cost(Y, Yhat)
 train_costs, eval_costs = train(dataobj, dataobjdev, cost, X, Y, epochs=epochs, lr=lr)
 

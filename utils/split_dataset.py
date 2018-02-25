@@ -4,7 +4,7 @@
 # an input point which are the ratings prior and a target point which are the ratings after. The second set
 # split into dev and test sets.
 
-file_path = "../data/netflix/output_small"
+file_path = "../data/netflix/output"
 train_file_path = file_path + "_train"
 test_file_path = file_path + "_test"
 dev_file_path = file_path + "_dev"
