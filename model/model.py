@@ -59,11 +59,12 @@ def decoder(A, weights, func, last_func):
     return A
 
 
-def autoencoder(X, layers, constrained=True, keep_prob=1.0, func="selu", last_func="selu"):
-    weights = initialize_weights(layers, constrained)
+def autoencoder(X, layers, constrained=True, keep_prob=1.0, func="selu", last_func="selu", weights=None):
+    if weights is None:
+        weights = initialize_weights(layers, constrained)
     A = encoder(X, weights, func, keep_prob)
     A = decoder(A, weights, func, last_func)
-    return A
+    return A, weights
 
 
 def get_loss(Y, Yhat):
@@ -77,6 +78,16 @@ def get_loss(Y, Yhat):
     return loss
 
 
+def get_test_loss(Y, Yhat):
+    zero = tf.constant(0, dtype=tf.float32)
+    mask = tf.not_equal(Y, zero)
+    mask = tf.cast(mask, tf.float32)
+    Yhatm = tf.multiply(Yhat, mask)
+    loss = tf.reduce_sum(tf.square(Yhatm - Y))
+    mask = tf.reduce_sum(mask)
+    return loss, mask
+
+
 def get_optimizer(optimizer_type, lr, momentum):
     if optimizer_type == "momentum":
         return tf.train.MomentumOptimizer(lr, momentum)
@@ -86,26 +97,33 @@ def get_optimizer(optimizer_type, lr, momentum):
         return tf.train.GradientDescentOptimizer(lr)
 
 
-def train(data_train, data_dev, loss, optimizer, X, Y, Yhat, epochs=50, lr=0.1, momentum=0.9, dense_refeeding=False):
+def train(data_train, data_dev, losses, optimizer, X, Y, Yhat, epochs=50,
+          dense_refeeding=False):
+    loss, loss_sum, loss_examples, loss_sum_dev, loss_examples_dev = losses
+    train_step = optimizer.minimize(loss)
+
     train_losses = []
     eval_losses = []
-
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
 
         for e in range(epochs):
-            train_loss = train_epoch(e, sess, optimizer, loss, data_train, X, Y, Yhat, train_losses, dense_refeeding)
+            train_loss = train_epoch(e, sess, train_step, loss_sum, loss_examples, data_train, X, Y, Yhat, dense_refeeding)
             train_losses.append(train_loss)
 
-            eval_loss = eval_epoch(e, sess, loss, data_dev, X, Y, eval_costs)
+            eval_loss = eval_epoch(e, sess, loss_sum_dev, loss_examples_dev, data_dev, X, Y)
             eval_losses.append(eval_loss)
+
+        saver = tf.train.Saver()
+        saver.save(sess, 'checkpoint/model')
+
 
     return train_losses, eval_losses
 
 
-def train_epoch(epoch_num, sess, optimizer, loss, data_train, X, Y, Yhat, dense_refeeding):
-    batches = 0
+def train_epoch(epoch_num, sess, train_step, loss_sum, loss_examples, data_train, X, Y, Yhat, dense_refeeding):
     total_loss = 0
+    total_examples = 0
     tic = time.time()
     while True:
         x = data_train.get_next()
@@ -114,23 +132,23 @@ def train_epoch(epoch_num, sess, optimizer, loss, data_train, X, Y, Yhat, dense_
             data_train.new_epoch()
             break
 
-        batches += 1
-        _, current_loss, fx = sess.run([optimizer, loss, Yhat], feed_dict={X: x, Y: x})
+        _, current_loss, current_examples, fx = sess.run([train_step, loss_sum, loss_examples, Yhat], feed_dict={X: x, Y: x})
         total_loss += current_loss
+        total_examples += current_examples
 
         if dense_refeeding:
-            batches += 1
-            _, current_loss, summary = sess.run([optimizer, loss], feed_dict={X: fx, Y: fx})
+            _, current_loss, current_examples = sess.run([train_step, loss_sum, loss_examples], feed_dict={X: fx, Y: fx})
             total_loss += current_loss
+            total_examples += current_examples
 
-    epoch_loss = np.sqrt(total_loss / batches)
+    epoch_loss = np.sqrt(total_loss / total_examples)
     print("Train epoch " + str(epoch_num + 1) + ":\t", epoch_loss, "\t : ", time.time() - tic, "s")
     return epoch_loss
 
 
-def eval_epoch(epoch_num, sess, cost, data_dev, X, Y):
-    batches = 0
+def eval_epoch(epoch_num, sess, loss_sum_dev, loss_examples_dev, data_dev, X, Y):
     total_loss = 0
+    total_examples = 0
     tic = time.time()
     while True:
         point = data_dev.get_next()
@@ -140,10 +158,41 @@ def eval_epoch(epoch_num, sess, cost, data_dev, X, Y):
             break
 
         x, y = point
-        batches += 1
-        current_loss = sess.run([cost], feed_dict={X: x, Y: y})
+        current_loss, current_examples = sess.run([loss_sum_dev, loss_examples_dev], feed_dict={X: x, Y: y})
         total_loss += current_loss
+        total_examples += current_examples
 
-    epoch_loss = np.sqrt(total_loss / batches)
+    epoch_loss = np.sqrt(total_loss / total_examples)
     print("Eval epoch " + str(epoch_num + 1) + ":\t", epoch_loss, "\t : ", time.time() - tic, "s")
     return epoch_loss
+
+
+def test(data, X, Y, YhatDev):
+    total_loss = 0
+    total_examples = 0
+    tic = time.time()
+    with tf.Session() as sess:
+        saver = tf.train.Saver()
+        ckpt = tf.train.get_checkpoint_state('checkpoint')
+        if ckpt and ckpt.model_checkpoint_path:
+            saver.restore(sess, ckpt.model_checkpoint_path)
+            print("loaded model")
+        while True:
+            point = data.get_next()
+            if point is None:
+                # finished epoch
+                break
+            x, y = point
+            fx, = sess.run([YhatDev], feed_dict={X: x, Y: y})
+            current_loss, current_examples = loss(y, fx)
+            total_loss += current_loss
+            total_examples += current_examples
+
+        RMSE = np.sqrt(total_loss / total_examples)
+        print("Test ", RMSE, "\t : ", time.time() - tic, "s")
+
+def loss(r, y):
+    m = (r != 0).astype(float)
+    losses = np.sum(m * np.square(r - y))
+    ratings = np.sum(m)
+    return losses, ratings

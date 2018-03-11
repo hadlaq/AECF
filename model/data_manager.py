@@ -65,13 +65,13 @@ class Data:
         f = open(self.path)
         j = 0
         for i in range(self.size):
-            j = i
             f.seek(self.offset)
             line = f.readline()
             self.offset = f.tell()
             if len(line) == 0:
                 self.done = True
                 break
+            j = i
             if self.test:
                 inp, target = parse_test_point(line)
                 matrix[:, i, 0] = inp
