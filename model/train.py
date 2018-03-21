@@ -12,21 +12,21 @@ def parse_args():
 
     # model params
     parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
-    parser.add_argument('--dropout', type=float, default=0.8, help='dropout probability=1-keep_prob')
-    parser.add_argument('--layers', nargs='+', type=int, default=[n, 512, 512, 1024], help='description of the encoder layers')
+    parser.add_argument('--dropout', type=float, default=0.35, help='dropout probability=1-keep_prob')
+    parser.add_argument('--layers', nargs='+', type=int, default=[n, 128, 256, 256], help='description of the encoder layers')
     parser.add_argument('--constrained', type=bool, default=False, help='constrained autoencoder')
     parser.add_argument('--activation', type=str, default="selu", help='activation function (selu, relu, sigmoid)')
     parser.add_argument('--last_activation', type=str, default="selu",
                         help='activation function of last layer (selu, relu, sigmoid)')
     parser.add_argument('--optimizer_type', type=str, default="momentum", help='momentum, adam, gd')
     parser.add_argument('--momentum', type=float, default=0.9, help='momentum parameter')
-    parser.add_argument('--dense_refeeding', type=bool, default=True, help='does dense refeeding')
+    parser.add_argument('--dense_refeeding', type=bool, default=False, help='does dense refeeding')
 
     # training params
-    parser.add_argument('--epochs', type=int, default=1, help='number of epochs')
+    parser.add_argument('--epochs', type=int, default=100, help='number of epochs')
     parser.add_argument('--batch_size', type=int, default=32, help='batch size')
     parser.add_argument('--chunk_size', type=int, default=2048, help='number of data points to read from disk each time')
-    parser.add_argument('--small_dataset', type=bool, default=True, help='use the small dataset')
+    parser.add_argument('--small_dataset', type=bool, default=False, help='use the small dataset')
 
     return parser.parse_args()
 
@@ -76,6 +76,11 @@ def main():
     plt.ylabel("Loss")
     plt.show()
 
+    print([i+1 for i in range(len(train_losses))])
+    print(train_losses)
+
+    print([i+1 for i in range(len(eval_losses))])
+    print(eval_losses)
 
 if __name__ == '__main__':
     main()

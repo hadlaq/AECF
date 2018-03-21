@@ -101,7 +101,9 @@ def train(data_train, data_dev, losses, optimizer, X, Y, Yhat, epochs=50,
           dense_refeeding=False):
     loss, loss_sum, loss_examples, loss_sum_dev, loss_examples_dev = losses
     train_step = optimizer.minimize(loss)
+    saver = tf.train.Saver()
 
+    best_eval = 99999999.0
     train_losses = []
     eval_losses = []
     with tf.Session() as sess:
@@ -113,9 +115,10 @@ def train(data_train, data_dev, losses, optimizer, X, Y, Yhat, epochs=50,
 
             eval_loss = eval_epoch(e, sess, loss_sum_dev, loss_examples_dev, data_dev, X, Y)
             eval_losses.append(eval_loss)
+            if eval_loss < best_eval:
+                best_eval = eval_loss
+                saver.save(sess, 'checkpoint/model')
 
-        saver = tf.train.Saver()
-        saver.save(sess, 'checkpoint/model')
 
 
     return train_losses, eval_losses
